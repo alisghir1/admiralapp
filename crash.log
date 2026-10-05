@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "C:\Users\Ali\Desktop\admiral suivi atelier\suivi_atelier.py", line 1085, in <module>
+    app = SotraglaceApp(root)
+          ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ali\Desktop\admiral suivi atelier\suivi_atelier.py", line 237, in __init__
+    self.build_ui()
+  File "C:\Users\Ali\Desktop\admiral suivi atelier\suivi_atelier.py", line 550, in build_ui
+    for i, poste in enumerate(POSTES_DISPONIBLES):
+                              ^^^^^^^^^^^^^^^^^^
+NameError: name 'POSTES_DISPONIBLES' is not defined
