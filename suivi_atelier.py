@@ -276,7 +276,7 @@ class SotraglaceApp:
         self.style.configure("Treeview.Heading", 
                              background="#444444", foreground="white", 
                              font=("Segoe UI", 12, "bold"))
-        self.style.map("Treeview", background=[('selected', '#4da6ff')])
+        self.style.map("Treeview", background=[], foreground=[])
         
         # Couleurs des statuts
         self.style.configure("TFrame", background="#1E1E1E")
@@ -567,6 +567,12 @@ class SotraglaceApp:
         self.tree_cmd.tag_configure('terminee', background='#2e5e32')
         self.tree_cmd.tag_configure('encours', background='#825018')
         
+        font_sel = ("Segoe UI", 11, "bold underline")
+        sel_blue = '#005A9E'
+        self.tree_cmd.tag_configure('terminee_sel', background='#2e5e32', foreground='white', font=font_sel)
+        self.tree_cmd.tag_configure('encours_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_cmd.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
+        
         # --- BLOC GAUCHE (Détails de la commande et Focus Scan) ---
         self.left_col = tk.Frame(self.body_frame, bg="#1E1E1E")
         self.left_col.grid(row=0, column=0, sticky="nsew", padx=10, pady=5)
@@ -641,6 +647,20 @@ class SotraglaceApp:
         self.tree_lignes.tag_configure('pret', background='#1E88E5', foreground='white')
         self.tree_lignes.tag_configure('attente', background='#424242', foreground='#AAAAAA')
         self.tree_lignes.tag_configure('erreur', background='#D32F2F', foreground='white')
+        self.tree_lignes.tag_configure('child', foreground='#888888')
+        
+        # Variantes de sélection
+        font_sel = ("Segoe UI", 11, "bold underline")
+        sel_blue = '#005A9E'
+        # Uniquement 'terminé' reste vert à la sélection
+        self.tree_lignes.tag_configure('terminee_sel', background='#388E3C', foreground='white', font=font_sel) 
+        # Les autres prennent le beau bleu de sélection
+        self.tree_lignes.tag_configure('encours_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_lignes.tag_configure('pret_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_lignes.tag_configure('attente_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_lignes.tag_configure('erreur_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_lignes.tag_configure('child_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_lignes.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
 
         # Focus Industriel / Radar (Bas gauche)
         self.bottom_left_container = tk.Frame(self.left_col, bg="#1E1E1E")
@@ -756,6 +776,10 @@ class SotraglaceApp:
         
         self.tree_be_cmd.bind("<<TreeviewSelect>>", self.on_be_order_select)
         
+        font_sel = ("Segoe UI", 11, "bold underline")
+        sel_blue = '#005A9E'
+        self.tree_be_cmd.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
+        
         # --- Droite : Détails ---
         right_be = tk.Frame(body_be, bg="#2D2D30")
         right_be.grid(row=0, column=1, sticky="nsew")
@@ -785,6 +809,9 @@ class SotraglaceApp:
         
         scroll_be_sage.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_be_sage.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        self.tree_be_sage.bind("<<TreeviewSelect>>", lambda e: self._update_selection_tags(self.tree_be_sage))
+        self.tree_be_sage.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
         
         # Bas: Sous-ensembles (OF)
         tk.Label(right_be, text="SOUS-ENSEMBLES DE FABRICATION (Nomenclature de l'Atelier)", font=("Segoe UI", 12, "bold"), fg="#4CAF50", bg="#2D2D30").pack(pady=(20,0))
@@ -824,6 +851,10 @@ class SotraglaceApp:
         
         scroll_be_of.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_be_of.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+        
+        self.tree_be_of.bind("<<TreeviewSelect>>", lambda e: self._update_selection_tags(self.tree_be_of))
+        self.tree_be_of.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_be_of.tag_configure('child_sel', background=sel_blue, foreground='white', font=font_sel)
 
     def change_poste(self):
         dialog = ConfigDialog(self.root, is_cancellable=True)
@@ -912,6 +943,8 @@ class SotraglaceApp:
             self.tree_be_cmd.insert("", "end", iid=do_piece, values=(do_piece, client))
 
     def on_be_order_select(self, event):
+        self._update_selection_tags(self.tree_be_cmd)
+        
         selected = self.tree_be_cmd.selection()
         if not selected: return
         do_piece = selected[0]
@@ -1140,9 +1173,33 @@ class SotraglaceApp:
                         child_iid = f"{id_of}_{l_key}"
                         self.tree_lignes.insert(id_of, "end", iid=child_iid, values=(f"↳ Ligne {dl_ligne}", ref, des_sage, l_dim, l_qte, "", ""), tags=('child',))
                         
-        self.tree_lignes.tag_configure('child', foreground='#888888')
+        # Tag child handled earlier
+    def _update_selection_tags(self, tree):
+        selected_items = tree.selection()
+        
+        # Traverse all items (parent + children depth 1)
+        all_items = []
+        for item in tree.get_children():
+            all_items.append(item)
+            all_items.extend(tree.get_children(item))
+            
+        for item in all_items:
+            tags = tree.item(item, "tags")
+            if not tags:
+                # Add default_sel if there's no tag but it's selected
+                if item in selected_items:
+                    tree.item(item, tags=("default_sel",))
+                continue
+                
+            base_tag = tags[0].replace("_sel", "")
+            new_tag = f"{base_tag}_sel" if item in selected_items else base_tag
+            
+            if tags[0] != new_tag:
+                tree.item(item, tags=(new_tag,))
 
     def on_order_select(self, event):
+        self._update_selection_tags(self.tree_cmd)
+        
         selected = self.tree_cmd.selection()
         if not selected:
             return
@@ -1175,6 +1232,8 @@ class SotraglaceApp:
 
 
     def on_article_select(self, event=None, force_show=True):
+        self._update_selection_tags(self.tree_lignes)
+        
         if getattr(self, '_is_scanning', False):
             force_show = False
             
