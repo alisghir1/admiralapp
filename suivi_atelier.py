@@ -593,10 +593,12 @@ class SotraglaceApp:
         
         scroll_lignes = ttk.Scrollbar(tree_lignes_frame, orient="vertical")
         
-        self.tree_lignes = ttk.Treeview(tree_lignes_frame, columns=cols_lignes, show="headings", selectmode="browse", height=6, yscrollcommand=scroll_lignes.set)
+        self.tree_lignes = ttk.Treeview(tree_lignes_frame, columns=cols_lignes, show="tree headings", selectmode="browse", height=6, yscrollcommand=scroll_lignes.set)
         scroll_lignes.config(command=self.tree_lignes.yview)
         
-        self.tree_lignes.heading("ligne", text="Ligne")
+        self.tree_lignes.heading("#0", text="")
+        self.tree_lignes.column("#0", width=40, stretch=False)
+        self.tree_lignes.heading("ligne", text="Type")
         self.tree_lignes.heading("ref", text="Réf")
         self.tree_lignes.heading("designation", text="Désignation")
         self.tree_lignes.heading("dim", text="Dimensions")
@@ -1022,12 +1024,20 @@ class SotraglaceApp:
         mon_op = self.get_mon_op()
         if not mon_op: return
         
+        # Pre-fetch sage lines for this order
+        lignes_cmd = self.sage_data.get('lignes_par_piece', {}).get(do_piece, [])
+        lignes_dict = {key: ligne for key, ligne in lignes_cmd}
+        
         cursor = self.db_conn.cursor()
-        cursor.execute("SELECT ID_OF, PROD, DESIGN, OBSERV, Qte FROM CdeDetail WHERE CDE = ?", (do_piece,))
-        ofs = cursor.fetchall()
+        try:
+            cursor.execute("SELECT ID_OF, PROD, DESIGN, OBSERV, Qte, LignesSage FROM CdeDetail WHERE CDE = ?", (do_piece,))
+            ofs = cursor.fetchall()
+        except sqlite3.OperationalError:
+            cursor.execute("SELECT ID_OF, PROD, DESIGN, OBSERV, Qte FROM CdeDetail WHERE CDE = ?", (do_piece,))
+            ofs = [list(r) + [""] for r in cursor.fetchall()]
         
         for of in ofs:
-            id_of, prod, design, observ, qte = of
+            id_of, prod, design, observ, qte, lignes_sage = of
             
             # Fetch routing
             cursor.execute("SELECT CodeOp, Poste_Assigne FROM OF_Gammes WHERE ID_OF = ? ORDER BY Ordre", (id_of,))
@@ -1090,7 +1100,30 @@ class SotraglaceApp:
                 tag = "attente"
                 
             dim = observ if observ else "--"
-            self.tree_lignes.insert("", "end", iid=id_of, values=("OF", prod, design, dim, qte, statut_txt, situation), tags=(tag,))
+            self.tree_lignes.insert("", "end", iid=id_of, values=("OF", prod, design, dim, qte, statut_txt, situation), tags=(tag,), open=False)
+            
+            if lignes_sage:
+                lignes_keys = lignes_sage.split(",")
+                for l_key in lignes_keys:
+                    l_key = l_key.strip()
+                    ligne_data = lignes_dict.get(l_key)
+                    if ligne_data:
+                        dl_ligne = ligne_data.get("DL_Ligne", "")
+                        ref = ligne_data.get("AR_Ref", "")
+                        des_sage = ligne_data.get("DL_Design", "")
+                        longueur = ligne_data.get("LONG", "")
+                        largeur = ligne_data.get("LARG", "")
+                        l_dim = f"{longueur}x{largeur}" if longueur and largeur else ""
+                        try:
+                            l_qte = int(float(str(ligne_data.get("DL_Qte", "1")).replace(',', '.')))
+                        except:
+                            l_qte = 1
+                            
+                        # Insert as child
+                        child_iid = f"{id_of}_{l_key}"
+                        self.tree_lignes.insert(id_of, "end", iid=child_iid, values=(f"↳ Ligne {dl_ligne}", ref, des_sage, l_dim, l_qte, "", ""), tags=('child',))
+                        
+        self.tree_lignes.tag_configure('child', foreground='#888888')
 
     def on_order_select(self, event):
         selected = self.tree_cmd.selection()
