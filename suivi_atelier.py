@@ -619,6 +619,23 @@ class SotraglaceApp:
         
         self.tree_lignes.bind("<<TreeviewSelect>>", self.on_article_select)
         
+        self.actions_article_frame = tk.Frame(self.left_col, bg="#1E1E1E")
+        self.actions_article_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(self.actions_article_frame, text="Action Manuelle :", font=("Segoe UI", 10, "bold"), fg="white", bg="#1E1E1E").pack(side=tk.LEFT, padx=5)
+        
+        self.btn_scan_one = tk.Button(self.actions_article_frame, text="+1 Scanner", bg="#1E88E5", fg="white", font=("Arial", 10, "bold"), command=lambda: self.manual_scan(1))
+        self.btn_scan_one.pack(side=tk.LEFT, padx=5)
+        
+        self.btn_scan_all = tk.Button(self.actions_article_frame, text="++ TOUT Scanner", bg="#388E3C", fg="white", font=("Arial", 10, "bold"), command=lambda: self.manual_scan("all"))
+        self.btn_scan_all.pack(side=tk.LEFT, padx=5)
+        
+        self.btn_unscan_one = tk.Button(self.actions_article_frame, text="-1 Descanner", bg="#F57C00", fg="white", font=("Arial", 10, "bold"), command=lambda: self.manual_unscan(1))
+        self.btn_unscan_one.pack(side=tk.LEFT, padx=5)
+        
+        self.btn_unscan_all = tk.Button(self.actions_article_frame, text="-- TOUT Descanner", bg="#D32F2F", fg="white", font=("Arial", 10, "bold"), command=lambda: self.manual_unscan("all"))
+        self.btn_unscan_all.pack(side=tk.LEFT, padx=5)
+        
         self.tree_lignes.tag_configure('terminee', background='#388E3C', foreground='white')
         self.tree_lignes.tag_configure('encours', background='#F57C00', foreground='white')
         self.tree_lignes.tag_configure('pret', background='#1E88E5', foreground='white')
@@ -1419,6 +1436,109 @@ class SotraglaceApp:
             else:
                 self.update_status_bar("progress", f"OK : Pièce enregistrée ({designation})")
 
+    def manual_scan(self, amount):
+        selected = self.tree_lignes.selection()
+        if not selected:
+            messagebox.showwarning("Erreur", "Veuillez d'abord sélectionner un article.")
+            return
+        
+        key = selected[0]
+        # Ignore clicks on child lines (they have underscores in their ID like OF-1000_1)
+        if "_" in key:
+            key = self.tree_lignes.parent(key)
+            if not key:
+                return
+                
+        cursor = self.db_conn.cursor()
+        cursor.execute("SELECT CDE, Qte FROM CdeDetail WHERE ID_OF = ?", (key,))
+        of_data = cursor.fetchone()
+        if not of_data: return
+        
+        do_piece, qte_totale = of_data
+        mon_op = self.get_mon_op()
+        codpost = self.poste_actuel.split(" - ")[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) FROM Scans 
+            JOIN Postes ON Scans.Poste = Postes.CodPost 
+            WHERE Scans.ID_OF = ? AND Postes.RefOp = ?
+        ''', (key, mon_op))
+        scans_actuels = cursor.fetchone()[0]
+        
+        to_add = 0
+        if amount == "all":
+            to_add = qte_totale - scans_actuels
+        else:
+            to_add = amount
+            
+        if to_add <= 0:
+            messagebox.showinfo("Info", "Cet article est déjà totalement terminé à ce poste.")
+            return
+            
+        if scans_actuels + to_add > qte_totale:
+            to_add = qte_totale - scans_actuels
+            
+        for _ in range(to_add):
+            cursor.execute("INSERT INTO Scans (ID_OF, Poste) VALUES (?, ?)", (key, codpost))
+        self.db_conn.commit()
+        
+        # Select and refresh
+        self.update_lines_view(do_piece)
+        if self.tree_lignes.exists(key):
+            self.tree_lignes.selection_set(key)
+            self.on_article_select(None)
+            
+        self.update_status_bar("success", f"{to_add} scan(s) ajouté(s) manuellement.")
+
+    def manual_unscan(self, amount):
+        selected = self.tree_lignes.selection()
+        if not selected:
+            messagebox.showwarning("Erreur", "Veuillez d'abord sélectionner un article.")
+            return
+        
+        key = selected[0]
+        # Ignore clicks on child lines (they have underscores in their ID)
+        if "_" in key:
+            key = self.tree_lignes.parent(key)
+            if not key:
+                return
+                
+        cursor = self.db_conn.cursor()
+        cursor.execute("SELECT CDE FROM CdeDetail WHERE ID_OF = ?", (key,))
+        of_data = cursor.fetchone()
+        if not of_data: return
+        
+        do_piece = of_data[0]
+        mon_op = self.get_mon_op()
+        
+        # Find existing scans for this operation
+        cursor.execute('''
+            SELECT Scans.ID_Scan FROM Scans 
+            JOIN Postes ON Scans.Poste = Postes.CodPost 
+            WHERE Scans.ID_OF = ? AND Postes.RefOp = ?
+            ORDER BY Scans.ID_Scan DESC
+        ''', (key, mon_op))
+        scans = cursor.fetchall()
+        
+        if not scans:
+            messagebox.showinfo("Info", "Aucun scan à annuler pour cet article à ce poste.")
+            return
+            
+        to_remove = len(scans) if amount == "all" else amount
+        
+        for i in range(min(to_remove, len(scans))):
+            id_scan = scans[i][0]
+            cursor.execute("DELETE FROM Scans WHERE ID_Scan = ?", (id_scan,))
+            
+        self.db_conn.commit()
+        
+        # Select and refresh
+        self.update_lines_view(do_piece)
+        if self.tree_lignes.exists(key):
+            self.tree_lignes.selection_set(key)
+            self.on_article_select(None)
+            
+        self.update_status_bar("success", f"{min(to_remove, len(scans))} scan(s) annulé(s) manuellement.")
 
 if __name__ == "__main__":
     import traceback
