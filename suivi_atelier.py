@@ -742,10 +742,45 @@ class SotraglaceApp:
         header_be = tk.Frame(self.tab_be, bg="#2C3E50", height=80)
         header_be.pack(fill=tk.X, side=tk.TOP)
         header_be.pack_propagate(False)
-        tk.Label(header_be, text="📐 BUREAU D'ÉTUDE - CRÉATION DES ORDRES DE FABRICATION", font=("Arial", 20, "bold"), fg="white", bg="#2C3E50").pack(side=tk.LEFT, padx=20, pady=20)
+        self.lbl_be_header = tk.Label(header_be, text="📐 BUREAU D'ÉTUDE", font=("Arial", 20, "bold"), fg="white", bg="#2C3E50")
+        self.lbl_be_header.pack(side=tk.LEFT, padx=20, pady=20)
         
-        # Body BE
-        body_be = tk.Frame(self.tab_be, bg="#1E1E1E")
+        # Style pour le notebook BE
+        style = ttk.Style()
+        style.configure("BENotebook.TNotebook", background="#1E1E1E")
+        style.configure("BENotebook.TNotebook.Tab", padding=[15, 5], font=('Arial', 11, 'bold'))
+        
+        # Notebook BE
+        self.be_notebook = ttk.Notebook(self.tab_be, style="BENotebook.TNotebook")
+        self.be_notebook.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+        
+        self.tab_be_gen = tk.Frame(self.be_notebook, bg="#1E1E1E")
+        self.tab_be_matrice = tk.Frame(self.be_notebook, bg="#1E1E1E")
+        self.tab_be_charge = tk.Frame(self.be_notebook, bg="#1E1E1E")
+        
+        self.be_notebook.add(self.tab_be_gen, text="📝 Génération OF")
+        self.be_notebook.add(self.tab_be_matrice, text="📊 Matrice Commandes")
+        self.be_notebook.add(self.tab_be_charge, text="🏭 Charge Machines")
+        
+        self.be_notebook.bind("<<NotebookTabChanged>>", self.on_be_tab_changed)
+        
+        self.build_be_gen_ui()
+        self.build_be_matrice_ui()
+        self.build_be_charge_ui()
+
+    def on_be_tab_changed(self, event):
+        tab_id = self.be_notebook.select()
+        tab_text = self.be_notebook.tab(tab_id, "text")
+        self.lbl_be_header.config(text=f"📐 BUREAU D'ÉTUDE - {tab_text}")
+        
+        if "Matrice" in tab_text:
+            self.refresh_be_matrice()
+        elif "Charge" in tab_text:
+            self.refresh_be_charge()
+
+    def build_be_gen_ui(self):
+        # Body BE Gen
+        body_be = tk.Frame(self.tab_be_gen, bg="#1E1E1E")
         body_be.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
         
         body_be.columnconfigure(0, weight=3) # Commandes (30%)
@@ -793,7 +828,7 @@ class SotraglaceApp:
         
         scroll_be_sage = ttk.Scrollbar(tree_be_sage_frame, orient="vertical")
         
-        self.tree_be_sage = ttk.Treeview(tree_be_sage_frame, columns=cols_be_sage, show="headings", height=5, yscrollcommand=scroll_be_sage.set)
+        self.tree_be_sage = ttk.Treeview(tree_be_sage_frame, columns=cols_be_sage, show="headings", height=5, yscrollcommand=scroll_be_sage.set, selectmode="browse")
         scroll_be_sage.config(command=self.tree_be_sage.yview)
         
         self.tree_be_sage.heading("ligne", text="Ligne")
@@ -910,7 +945,7 @@ class SotraglaceApp:
                 continue
             
             # Déterminer le tag de couleur
-            tag = ""
+            tag = "pas_demarre"
             if total > 0:
                 if scanned >= total:
                     tag = "terminee"
@@ -1066,6 +1101,281 @@ class SotraglaceApp:
             # Refresh OFs list
             self.on_be_order_select(None)
             self.update_status_bar("success", "Ordre de Fabrication créé avec succès !")
+
+    def build_be_matrice_ui(self):
+        header_mat = tk.Frame(self.tab_be_matrice, bg="#2C3E50", height=80)
+        header_mat.pack(fill=tk.X, side=tk.TOP)
+        header_mat.pack_propagate(False)
+        tk.Label(header_mat, text="📊 BUREAU D'ÉTUDE - MATRICE COMMANDES", font=("Arial", 20, "bold"), fg="white", bg="#2C3E50").pack(side=tk.LEFT, padx=20, pady=20)
+        
+        btn_refresh = tk.Button(header_mat, text="🔄 Actualiser", font=("Arial", 12, "bold"), bg="#4da6ff", fg="white", command=self.refresh_be_matrice)
+        btn_refresh.pack(side=tk.RIGHT, padx=20, pady=20)
+        
+        body_mat = tk.Frame(self.tab_be_matrice, bg="#1E1E1E")
+        body_mat.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+        
+        scroll_y = ttk.Scrollbar(body_mat, orient="vertical")
+        scroll_x = ttk.Scrollbar(body_mat, orient="horizontal")
+        
+        self.tree_matrice = ttk.Treeview(body_mat, xscrollcommand=scroll_x.set, yscrollcommand=scroll_y.set, show="tree headings")
+        scroll_y.config(command=self.tree_matrice.yview)
+        scroll_x.config(command=self.tree_matrice.xview)
+        
+        self.tree_matrice.heading("#0", text="Désignation (Hiérarchie)")
+        self.tree_matrice.column("#0", width=400, anchor="w")
+        
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tree_matrice.pack(expand=True, fill=tk.BOTH)
+        
+        # Tags for 3 states
+        self.tree_matrice.tag_configure("pas_demarre", background="#424242", foreground="#AAAAAA")
+        self.tree_matrice.tag_configure("encours", background="#F57C00", foreground="white")
+        self.tree_matrice.tag_configure("terminee", background="#388E3C", foreground="white")
+
+    def refresh_be_matrice(self):
+        for item in self.tree_matrice.get_children():
+            self.tree_matrice.delete(item)
+            
+        cursor = self.db_conn.cursor()
+        cursor.execute("SELECT RefOp, LibelOp FROM Operations ORDER BY RefOp")
+        operations = cursor.fetchall()
+        
+        columns = [op[1] for op in operations]
+        self.tree_matrice["columns"] = columns
+        for op in operations:
+            self.tree_matrice.heading(op[1], text=op[1])
+            self.tree_matrice.column(op[1], width=120, anchor="center")
+            
+        cursor.execute("SELECT DISTINCT CDE FROM CdeDetail")
+        commandes = [r[0] for r in cursor.fetchall()]
+        
+        for cde in commandes:
+            cursor.execute("SELECT ID_OF, PROD, DESIGN, LignesSage FROM CdeDetail WHERE CDE = ?", (cde,))
+            ofs = cursor.fetchall()
+            
+            cde_node = self.tree_matrice.insert("", "end", text=f"📦 CDE {cde}", open=False)
+            
+            cde_total_scans_any = 0
+            cde_all_done = True
+            cde_has_ops = False
+            
+            for of in ofs:
+                id_of, prod, design, lignes_sage = of
+                of_node = self.tree_matrice.insert(cde_node, "end", text=f"⚙️ {id_of} - {design}", open=False)
+                
+                # Fetch OF Gammes
+                cursor.execute("SELECT CodeOp FROM OF_Gammes WHERE ID_OF = ?", (id_of,))
+                of_ops = [r[0] for r in cursor.fetchall()]
+                
+                if not of_ops:
+                    continue
+                    
+                cde_has_ops = True
+                
+                # We need to construct children if LignesSage has multiple
+                child_lines = []
+                if lignes_sage:
+                    for l in lignes_sage.split(","):
+                        l = l.strip()
+                        if l: child_lines.append(l)
+                
+                of_total_scans_any = 0
+                of_all_done = True
+                
+                of_op_texts = []
+                for op in operations:
+                    ref_op = op[0]
+                    if ref_op not in of_ops:
+                        of_op_texts.append("-")
+                        continue
+                        
+                    # Calculate total scans for this operation on this OF
+                    cursor.execute('''
+                        SELECT COUNT(*) FROM Scans 
+                        JOIN Postes ON Scans.Poste = Postes.CodPost 
+                        WHERE Scans.ID_OF = ? AND Postes.RefOp = ?
+                    ''', (id_of, ref_op))
+                    mon_scans = cursor.fetchone()[0]
+                    
+                    cursor.execute("SELECT Qte FROM CdeDetail WHERE ID_OF = ?", (id_of,))
+                    qte_totale = cursor.fetchone()[0]
+                    
+                    of_total_scans_any += mon_scans
+                    if mon_scans < qte_totale:
+                        of_all_done = False
+                        
+                    of_op_texts.append(f"{mon_scans}/{qte_totale}")
+                    
+                self.tree_matrice.item(of_node, values=of_op_texts)
+                
+                if of_total_scans_any == 0:
+                    self.tree_matrice.item(of_node, tags=("pas_demarre",))
+                elif of_all_done:
+                    self.tree_matrice.item(of_node, tags=("terminee",))
+                else:
+                    self.tree_matrice.item(of_node, tags=("encours",))
+                    
+                cde_total_scans_any += of_total_scans_any
+                if not of_all_done:
+                    cde_all_done = False
+                    
+                # Children
+                if child_lines:
+                    lignes_dict = {k: v for k, v in self.sage_data.get('lignes_par_piece', {}).get(cde, [])}
+                    for c_key in child_lines:
+                        c_data = lignes_dict.get(c_key, {})
+                        c_design = c_data.get("DL_Design", "Ligne")
+                        try:
+                            c_qte = int(float(str(c_data.get("DL_Qte", "1")).replace(',', '.')))
+                        except:
+                            c_qte = 1
+                            
+                        c_node = self.tree_matrice.insert(of_node, "end", text=f"↳ Ligne {c_key} - {c_design}", open=False)
+                        c_op_texts = []
+                        
+                        c_total_scans = 0
+                        c_all_done = True
+                        for op in operations:
+                            ref_op = op[0]
+                            if ref_op not in of_ops:
+                                c_op_texts.append("-")
+                                continue
+                            
+                            cursor.execute('''
+                                SELECT COUNT(*) FROM Scans 
+                                JOIN Postes ON Scans.Poste = Postes.CodPost 
+                                WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key = ?
+                            ''', (id_of, ref_op, c_key))
+                            c_scans = cursor.fetchone()[0]
+                            c_total_scans += c_scans
+                            if c_scans < c_qte:
+                                c_all_done = False
+                            c_op_texts.append(f"{c_scans}/{c_qte}")
+                            
+                        self.tree_matrice.item(c_node, values=c_op_texts)
+                        if c_total_scans == 0:
+                            self.tree_matrice.item(c_node, tags=("pas_demarre",))
+                        elif c_all_done:
+                            self.tree_matrice.item(c_node, tags=("terminee",))
+                        else:
+                            self.tree_matrice.item(c_node, tags=("encours",))
+            
+            if not cde_has_ops:
+                self.tree_matrice.item(cde_node, tags=("pas_demarre",))
+            else:
+                if cde_total_scans_any == 0:
+                    self.tree_matrice.item(cde_node, tags=("pas_demarre",))
+                elif cde_all_done:
+                    self.tree_matrice.item(cde_node, tags=("terminee",))
+                else:
+                    self.tree_matrice.item(cde_node, tags=("encours",))
+
+
+    def build_be_charge_ui(self):
+        header_charge = tk.Frame(self.tab_be_charge, bg="#2C3E50", height=80)
+        header_charge.pack(fill=tk.X, side=tk.TOP)
+        header_charge.pack_propagate(False)
+        tk.Label(header_charge, text="🏭 BUREAU D'ÉTUDE - CHARGE MACHINES", font=("Arial", 20, "bold"), fg="white", bg="#2C3E50").pack(side=tk.LEFT, padx=20, pady=20)
+        
+        btn_refresh = tk.Button(header_charge, text="🔄 Actualiser", font=("Arial", 12, "bold"), bg="#4da6ff", fg="white", command=self.refresh_be_charge)
+        btn_refresh.pack(side=tk.RIGHT, padx=20, pady=20)
+        
+        body = tk.Frame(self.tab_be_charge, bg="#1E1E1E")
+        body.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+        
+        left_frame = tk.Frame(body, bg="#2D2D30", width=300)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        left_frame.pack_propagate(False)
+        
+        tk.Label(left_frame, text="SÉLECTION MACHINE", font=("Segoe UI", 12, "bold"), fg="#4da6ff", bg="#2D2D30").pack(pady=10)
+        
+        self.tree_machines = ttk.Treeview(left_frame, columns=("machine",), show="headings")
+        self.tree_machines.heading("machine", text="Poste / Machine")
+        self.tree_machines.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
+        self.tree_machines.bind("<<TreeviewSelect>>", self.on_machine_select)
+        
+        self.tree_machines.tag_configure('default_sel', background='#005A9E', foreground='white', font=("Segoe UI", 11, "bold underline"))
+        
+        right_frame = tk.Frame(body, bg="#1E1E1E")
+        right_frame.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+        
+        right_frame.columnconfigure(0, weight=1)
+        right_frame.columnconfigure(1, weight=1)
+        right_frame.columnconfigure(2, weight=1)
+        right_frame.rowconfigure(1, weight=1)
+        
+        tk.Label(right_frame, text="📥 PAS ENCORE DÉMARRÉ (A Faire)", bg="#424242", fg="white", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        tk.Label(right_frame, text="⏳ EN COURS (Scans démarrés)", bg="#F57C00", fg="white", font=("Arial", 12, "bold")).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        tk.Label(right_frame, text="✅ TERMINÉ", bg="#388E3C", fg="white", font=("Arial", 12, "bold")).grid(row=0, column=2, sticky="ew", padx=5, pady=5)
+        
+        self.list_attente = tk.Listbox(right_frame, bg="#2D2D30", fg="white", font=("Arial", 10))
+        self.list_encours = tk.Listbox(right_frame, bg="#2D2D30", fg="white", font=("Arial", 10))
+        self.list_termine = tk.Listbox(right_frame, bg="#2D2D30", fg="white", font=("Arial", 10))
+        
+        self.list_attente.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.list_encours.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+        self.list_termine.grid(row=1, column=2, sticky="nsew", padx=5, pady=5)
+
+    def refresh_be_charge(self):
+        cursor = self.db_conn.cursor()
+        for item in self.tree_machines.get_children():
+            self.tree_machines.delete(item)
+            
+        cursor.execute("SELECT CodPost, DesPost FROM Postes ORDER BY CodPost")
+        for codpost, lib in cursor.fetchall():
+            self.tree_machines.insert("", "end", iid=codpost, values=(f"{codpost} - {lib}",))
+            
+        self.list_attente.delete(0, tk.END)
+        self.list_encours.delete(0, tk.END)
+        self.list_termine.delete(0, tk.END)
+
+    def on_machine_select(self, event):
+        self._update_selection_tags(self.tree_machines)
+        
+        selected = self.tree_machines.selection()
+        if not selected: return
+        codpost = selected[0]
+        
+        self.list_attente.delete(0, tk.END)
+        self.list_encours.delete(0, tk.END)
+        self.list_termine.delete(0, tk.END)
+        
+        cursor = self.db_conn.cursor()
+        cursor.execute("SELECT RefOp FROM Postes WHERE CodPost = ?", (codpost,))
+        row = cursor.fetchone()
+        if not row: return
+        ref_op = row[0]
+        
+        cursor.execute('''
+            SELECT CdeDetail.CDE, CdeDetail.ID_OF, CdeDetail.DESIGN, CdeDetail.Qte, OF_Gammes.Poste_Assigne
+            FROM OF_Gammes
+            JOIN CdeDetail ON OF_Gammes.ID_OF = CdeDetail.ID_OF
+            WHERE OF_Gammes.CodeOp = ?
+        ''', (ref_op,))
+        ofs = cursor.fetchall()
+        
+        for of in ofs:
+            cde, id_of, design, qte, poste_assigne = of
+            
+            if poste_assigne and poste_assigne != codpost:
+                continue
+                
+            cursor.execute('''
+                SELECT COUNT(*) FROM Scans 
+                WHERE ID_OF = ? AND Poste = ?
+            ''', (id_of, codpost))
+            scans = cursor.fetchone()[0]
+            
+            txt = f"{id_of} (CDE {cde}) - {design} - {scans}/{qte}"
+            
+            if scans == 0:
+                self.list_attente.insert(tk.END, txt)
+            elif scans >= qte:
+                self.list_termine.insert(tk.END, txt)
+            else:
+                self.list_encours.insert(tk.END, txt)
+
 
     def update_lines_view(self, do_piece):
         for item in self.tree_lignes.get_children():
