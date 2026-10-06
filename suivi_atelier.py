@@ -562,7 +562,11 @@ class SotraglaceApp:
         scroll_cmd.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_cmd.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
         
-        self.tree_cmd.bind("<<TreeviewSelect>>", self.on_order_select)
+        self.tree_cmd.tag_configure('terminee_sel', background='#1E7B35', foreground='white', font=("Segoe UI", 11, "bold underline"))
+        self.tree_cmd.tag_configure('encours_sel', background='#A85C1C', foreground='white', font=("Segoe UI", 11, "bold underline"))
+        self.tree_cmd.tag_configure('pas_demarre_sel', background='#222222', foreground='white', font=("Segoe UI", 11, "bold underline"))
+        self.tree_cmd.tag_configure('default_sel', background='#005A9E', foreground='white', font=("Segoe UI", 11, "bold underline"))
+        self.tree_cmd.bind("<<TreeviewSelect>>", lambda e: [self._update_selection_tags(self.tree_cmd), self.on_order_select(e)])
         
         self.tree_cmd.tag_configure('terminee', background='#2e5e32')
         self.tree_cmd.tag_configure('encours', background='#825018')
@@ -623,7 +627,7 @@ class SotraglaceApp:
         scroll_lignes.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_lignes.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        self.tree_lignes.bind("<<TreeviewSelect>>", self.on_article_select)
+        # self.tree_lignes.bind("<<TreeviewSelect>>", self.on_article_select) # Replaced with lambda in build_ui
         
         self.actions_article_frame = tk.Frame(self.left_col, bg="#1E1E1E")
         self.actions_article_frame.pack(fill=tk.X, pady=(0, 10))
@@ -809,7 +813,11 @@ class SotraglaceApp:
         scroll_be_cmd.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_be_cmd.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
         
-        self.tree_be_cmd.bind("<<TreeviewSelect>>", self.on_be_order_select)
+        self.tree_be_cmd.tag_configure('terminee_sel', background='#1E7B35', foreground='white', font=("Segoe UI", 10, "bold underline"))
+        self.tree_be_cmd.tag_configure('encours_sel', background='#A85C1C', foreground='white', font=("Segoe UI", 10, "bold underline"))
+        self.tree_be_cmd.tag_configure('pas_demarre_sel', background='#222222', foreground='white', font=("Segoe UI", 10, "bold underline"))
+        self.tree_be_cmd.tag_configure('default_sel', background='#005A9E', foreground='white', font=("Segoe UI", 10, "bold underline"))
+        self.tree_be_cmd.bind("<<TreeviewSelect>>", lambda e: [self._update_selection_tags(self.tree_be_cmd), self.on_be_order_select(e)])
         
         font_sel = ("Segoe UI", 11, "bold underline")
         sel_blue = '#005A9E'
@@ -1378,7 +1386,9 @@ class SotraglaceApp:
 
 
     def update_lines_view(self, do_piece):
+        open_states = {}
         for item in self.tree_lignes.get_children():
+            open_states[item] = self.tree_lignes.item(item, "open")
             self.tree_lignes.delete(item)
             
         mon_op = self.get_mon_op()
@@ -1464,6 +1474,16 @@ class SotraglaceApp:
             
             if lignes_sage:
                 lignes_keys = lignes_sage.split(",")
+                
+                # Get general scans (Child_Key IS NULL)
+                cursor.execute('''
+                    SELECT COUNT(*) FROM Scans 
+                    JOIN Postes ON Scans.Poste = Postes.CodPost 
+                    WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key IS NULL
+                ''', (id_of, mon_op))
+                general_scans = cursor.fetchone()[0]
+                scans_restants = general_scans
+                
                 for l_key in lignes_keys:
                     l_key = l_key.strip()
                     ligne_data = lignes_dict.get(l_key)
@@ -1479,9 +1499,44 @@ class SotraglaceApp:
                         except:
                             l_qte = 1
                             
+                        # Specific scans for this child
+                        cursor.execute('''
+                            SELECT COUNT(*) FROM Scans 
+                            JOIN Postes ON Scans.Poste = Postes.CodPost 
+                            WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key = ?
+                        ''', (id_of, mon_op, l_key))
+                        specific_scans = cursor.fetchone()[0]
+                        
+                        l_scans = specific_scans
+                        
+                        # Pad with general scans if needed
+                        missing_for_full = max(0, l_qte - l_scans)
+                        if scans_restants > 0 and missing_for_full > 0:
+                            if scans_restants >= missing_for_full:
+                                l_scans += missing_for_full
+                                scans_restants -= missing_for_full
+                            else:
+                                l_scans += scans_restants
+                                scans_restants = 0
+                                
+                        if l_scans >= l_qte and l_qte > 0:
+                            c_tag = "terminee"
+                            c_statut = "Terminé"
+                        elif l_scans > 0:
+                            c_tag = "encours"
+                            c_statut = f"En cours ({l_scans}/{l_qte})"
+                        else:
+                            c_tag = "pas_demarre"
+                            c_statut = "Pas encore démarré"
+                            
                         # Insert as child
                         child_iid = f"{id_of}_{l_key}"
-                        self.tree_lignes.insert(id_of, "end", iid=child_iid, values=(f"↳ Ligne {dl_ligne}", ref, des_sage, l_dim, l_qte, "", ""), tags=('child',))
+                        self.tree_lignes.insert(id_of, "end", iid=child_iid, values=(f"↳ Ligne {dl_ligne}", ref, des_sage, l_dim, l_qte, c_statut, ""), tags=(c_tag,))
+                        
+        # Restore open states
+        for item, is_open in open_states.items():
+            if self.tree_lignes.exists(item):
+                self.tree_lignes.item(item, open=is_open)
                         
         # Tag child handled earlier
     def _update_selection_tags(self, tree):
@@ -1805,18 +1860,73 @@ class SotraglaceApp:
             else:
                 self.update_status_bar("progress", f"OK : Pièce enregistrée ({designation})")
 
+    def _add_scans_with_catchup(self, key, mon_op, codpost, amount_to_add, qte_totale, child_key=None):
+        cursor = self.db_conn.cursor()
+        cursor.execute("SELECT CodeOp, Poste_Assigne FROM OF_Gammes WHERE ID_OF = ? ORDER BY Ordre", (key,))
+        routing = cursor.fetchall()
+        
+        for i, step in enumerate(routing):
+            prev_op, poste_assigne = step
+            if prev_op == mon_op:
+                break
+                
+            if child_key:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM Scans 
+                    JOIN Postes ON Scans.Poste = Postes.CodPost 
+                    WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key = ?
+                ''', (key, prev_op, child_key))
+            else:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM Scans 
+                    JOIN Postes ON Scans.Poste = Postes.CodPost 
+                    WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key IS NULL
+                ''', (key, prev_op))
+                
+            prev_total_scans = cursor.fetchone()[0]
+            target_total_scans = prev_total_scans + amount_to_add
+            
+            missing = amount_to_add
+            if missing > 0:
+                poste_to_use = poste_assigne
+                if not poste_to_use:
+                    cursor.execute("SELECT CodPost FROM Postes WHERE RefOp = ? LIMIT 1", (prev_op,))
+                    row = cursor.fetchone()
+                    poste_to_use = row[0] if row else None
+                    
+                if poste_to_use:
+                    for _ in range(missing):
+                        if child_key:
+                            cursor.execute("INSERT INTO Scans (ID_OF, Poste, Child_Key) VALUES (?, ?, ?)", (key, poste_to_use, child_key))
+                        else:
+                            cursor.execute("INSERT INTO Scans (ID_OF, Poste) VALUES (?, ?)", (key, poste_to_use))
+        
+        added = 0
+        for _ in range(amount_to_add):
+            if child_key:
+                cursor.execute("INSERT INTO Scans (ID_OF, Poste, Child_Key) VALUES (?, ?, ?)", (key, codpost, child_key))
+            else:
+                cursor.execute("INSERT INTO Scans (ID_OF, Poste) VALUES (?, ?)", (key, codpost))
+            added += 1
+            
+        self.db_conn.commit()
+        return added
+
     def manual_scan(self, amount):
         selected = self.tree_lignes.selection()
         if not selected:
             messagebox.showwarning("Erreur", "Veuillez d'abord sélectionner un article.")
             return
         
-        key = selected[0]
-        # Ignore clicks on child lines (they have underscores in their ID like OF-1000_1)
+        original_selection = selected[0]
+        key = original_selection
+        child_key = None
+        
         if "_" in key:
-            key = self.tree_lignes.parent(key)
-            if not key:
-                return
+            parent_id = self.tree_lignes.parent(key)
+            if not parent_id: return
+            child_key = key.split("_", 1)[1]
+            key = parent_id
                 
         cursor = self.db_conn.cursor()
         cursor.execute("SELECT CDE, Qte FROM CdeDetail WHERE ID_OF = ?", (key,))
@@ -1827,34 +1937,55 @@ class SotraglaceApp:
         mon_op = self.get_mon_op()
         codpost = self.poste_actuel.split(" - ")[0]
         
-        cursor.execute('''
-            SELECT COUNT(*) FROM Scans 
-            JOIN Postes ON Scans.Poste = Postes.CodPost 
-            WHERE Scans.ID_OF = ? AND Postes.RefOp = ?
-        ''', (key, mon_op))
-        scans_actuels = cursor.fetchone()[0]
+        if child_key is not None:
+            lignes_dict = {k: v for k, v in self.sage_data.get('lignes_par_piece', {}).get(do_piece, [])}
+            c_data = lignes_dict.get(child_key, {})
+            try:
+                target_qte = int(float(str(c_data.get("DL_Qte", "1")).replace(',', '.')))
+            except:
+                target_qte = 1
+                
+            cursor.execute('''
+                SELECT COUNT(*) FROM Scans 
+                JOIN Postes ON Scans.Poste = Postes.CodPost 
+                WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key = ?
+            ''', (key, mon_op, child_key))
+            scans_actuels_specific = cursor.fetchone()[0]
+        else:
+            target_qte = qte_totale
+            cursor.execute('''
+                SELECT COUNT(*) FROM Scans 
+                JOIN Postes ON Scans.Poste = Postes.CodPost 
+                WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key IS NULL
+            ''', (key, mon_op))
+            scans_actuels_specific = cursor.fetchone()[0]
         
+        if scans_actuels_specific >= target_qte:
+            messagebox.showinfo("Info", "La quantité max est déjà atteinte pour cet élément à ce poste.")
+            return
+            
         to_add = 0
         if amount == "all":
-            to_add = qte_totale - scans_actuels
+            to_add = target_qte - scans_actuels_specific
         else:
             to_add = amount
             
         if to_add <= 0:
-            messagebox.showinfo("Info", "Cet article est déjà totalement terminé à ce poste.")
             return
             
-        if scans_actuels + to_add > qte_totale:
-            to_add = qte_totale - scans_actuels
+        if scans_actuels_specific + to_add > target_qte:
+            to_add = target_qte - scans_actuels_specific
             
-        for _ in range(to_add):
-            cursor.execute("INSERT INTO Scans (ID_OF, Poste) VALUES (?, ?)", (key, codpost))
-        self.db_conn.commit()
+        added = self._add_scans_with_catchup(key, mon_op, codpost, to_add, qte_totale, child_key=child_key)
+        if added <= 0: return
         
-        # Select and refresh
         self.update_lines_view(do_piece)
-        if self.tree_lignes.exists(key):
-            self.tree_lignes.selection_set(key)
+        if hasattr(self, "_update_single_cmd_in_tree"):
+            self._update_single_cmd_in_tree(do_piece)
+                
+        if self.tree_lignes.exists(original_selection):
+            self.tree_lignes.selection_set(original_selection)
+            self.tree_lignes.see(original_selection)
             self.on_article_select(None)
             
         self.update_status_bar("success", f"{to_add} scan(s) ajouté(s) manuellement.")
@@ -1865,12 +1996,15 @@ class SotraglaceApp:
             messagebox.showwarning("Erreur", "Veuillez d'abord sélectionner un article.")
             return
         
-        key = selected[0]
-        # Ignore clicks on child lines (they have underscores in their ID)
+        original_selection = selected[0]
+        key = original_selection
+        child_key = None
+        
         if "_" in key:
-            key = self.tree_lignes.parent(key)
-            if not key:
-                return
+            parent_id = self.tree_lignes.parent(key)
+            if not parent_id: return
+            child_key = key.split("_", 1)[1]
+            key = parent_id
                 
         cursor = self.db_conn.cursor()
         cursor.execute("SELECT CDE FROM CdeDetail WHERE ID_OF = ?", (key,))
@@ -1880,20 +2014,45 @@ class SotraglaceApp:
         do_piece = of_data[0]
         mon_op = self.get_mon_op()
         
-        # Find existing scans for this operation
-        cursor.execute('''
-            SELECT Scans.ID_Scan FROM Scans 
-            JOIN Postes ON Scans.Poste = Postes.CodPost 
-            WHERE Scans.ID_OF = ? AND Postes.RefOp = ?
-            ORDER BY Scans.ID_Scan DESC
-        ''', (key, mon_op))
-        scans = cursor.fetchall()
-        
+        if child_key is not None:
+            cursor.execute('''
+                SELECT Scans.ID_Scan FROM Scans 
+                JOIN Postes ON Scans.Poste = Postes.CodPost 
+                WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key = ?
+                ORDER BY Scans.ID_Scan DESC
+            ''', (key, mon_op, child_key))
+            scans = cursor.fetchall()
+            
+            if not scans:
+                cursor.execute('''
+                    SELECT Scans.ID_Scan FROM Scans 
+                    JOIN Postes ON Scans.Poste = Postes.CodPost 
+                    WHERE Scans.ID_OF = ? AND Postes.RefOp = ? AND Scans.Child_Key IS NULL
+                    ORDER BY Scans.ID_Scan DESC
+                ''', (key, mon_op))
+                scans = cursor.fetchall()
+                
+            lignes_dict = {k: v for k, v in self.sage_data.get('lignes_par_piece', {}).get(do_piece, [])}
+            c_data = lignes_dict.get(child_key, {})
+            try:
+                target_qte = int(float(str(c_data.get("DL_Qte", "1")).replace(',', '.')))
+            except:
+                target_qte = 1
+        else:
+            cursor.execute('''
+                SELECT Scans.ID_Scan FROM Scans 
+                JOIN Postes ON Scans.Poste = Postes.CodPost 
+                WHERE Scans.ID_OF = ? AND Postes.RefOp = ?
+                ORDER BY Scans.ID_Scan DESC
+            ''', (key, mon_op))
+            scans = cursor.fetchall()
+            target_qte = len(scans)
+            
         if not scans:
             messagebox.showinfo("Info", "Aucun scan à annuler pour cet article à ce poste.")
             return
             
-        to_remove = len(scans) if amount == "all" else amount
+        to_remove = min(len(scans), target_qte) if amount == "all" else amount
         
         for i in range(min(to_remove, len(scans))):
             id_scan = scans[i][0]
@@ -1901,21 +2060,14 @@ class SotraglaceApp:
             
         self.db_conn.commit()
         
-        # Select and refresh
         self.update_lines_view(do_piece)
-        if self.tree_lignes.exists(key):
-            self.tree_lignes.selection_set(key)
+        if hasattr(self, "_update_single_cmd_in_tree"):
+            self._update_single_cmd_in_tree(do_piece)
+                
+        if self.tree_lignes.exists(original_selection):
+            self.tree_lignes.selection_set(original_selection)
+            self.tree_lignes.see(original_selection)
             self.on_article_select(None)
             
         self.update_status_bar("success", f"{min(to_remove, len(scans))} scan(s) annulé(s) manuellement.")
-
-if __name__ == "__main__":
-    import traceback
-    try:
-        root = tk.Tk()
-        app = SotraglaceApp(root)
-        root.mainloop()
-    except Exception as e:
-        with open("crash.log", "w") as f:
-            f.write(traceback.format_exc())
 
