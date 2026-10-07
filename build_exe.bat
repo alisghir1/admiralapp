@@ -19,10 +19,14 @@ if exist suivi_atelier.spec del suivi_atelier.spec
 
 echo.
 echo Compilation en cours (cela peut prendre quelques minutes)...
-%PYINSTALLER_CMD% --noconsole --onefile --windowed --name "Sotraglace_Suivi_Atelier" suivi_atelier.py
+%PYINSTALLER_CMD% --noconsole --onefile --windowed --name "Sotraglace_Suivi_Atelier" --distpath . suivi_atelier.py
 
 echo.
+echo Nettoyage final...
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+if exist suivi_atelier.spec del suivi_atelier.spec
+
 echo ===================================================
-echo TERMINE ! L'executable se trouve dans le dossier "dist".
+echo TERMINE ! L'executable Sotraglace_Suivi_Atelier.exe a ete cree.
 echo ===================================================
-pause

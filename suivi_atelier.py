@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import json
 import sqlite3
@@ -487,6 +487,7 @@ class SotraglaceApp:
         # Création du système d'onglets (Notebook)
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(expand=True, fill=tk.BOTH)
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_main_tab_changed)
         
         # Onglet 1 : Atelier
         self.tab_atelier = tk.Frame(self.notebook, bg="#1E1E1E")
@@ -564,18 +565,16 @@ class SotraglaceApp:
         
         self.tree_cmd.tag_configure('terminee_sel', background='#1E7B35', foreground='white', font=("Segoe UI", 11, "bold underline"))
         self.tree_cmd.tag_configure('encours_sel', background='#A85C1C', foreground='white', font=("Segoe UI", 11, "bold underline"))
-        self.tree_cmd.tag_configure('pas_demarre_sel', background='#222222', foreground='white', font=("Segoe UI", 11, "bold underline"))
+        self.tree_cmd.tag_configure('pas_demarre_sel', background='#005A9E', foreground='white', font=("Segoe UI", 11, "bold underline"))
         self.tree_cmd.tag_configure('default_sel', background='#005A9E', foreground='white', font=("Segoe UI", 11, "bold underline"))
         self.tree_cmd.bind("<<TreeviewSelect>>", lambda e: [self._update_selection_tags(self.tree_cmd), self.on_order_select(e)])
         
         self.tree_cmd.tag_configure('terminee', background='#2e5e32')
         self.tree_cmd.tag_configure('encours', background='#825018')
+        self.tree_cmd.tag_configure('pas_demarre', background='#424242', foreground='#AAAAAA')
         
         font_sel = ("Segoe UI", 11, "bold underline")
         sel_blue = '#005A9E'
-        self.tree_cmd.tag_configure('terminee_sel', background='#2e5e32', foreground='white', font=font_sel)
-        self.tree_cmd.tag_configure('encours_sel', background=sel_blue, foreground='white', font=font_sel)
-        self.tree_cmd.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
         
         # --- BLOC GAUCHE (Détails de la commande et Focus Scan) ---
         self.left_col = tk.Frame(self.body_frame, bg="#1E1E1E")
@@ -627,8 +626,7 @@ class SotraglaceApp:
         scroll_lignes.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_lignes.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # self.tree_lignes.bind("<<TreeviewSelect>>", self.on_article_select) # Replaced with lambda in build_ui
-        
+        self.tree_lignes.bind("<<TreeviewSelect>>", lambda e: [self._update_selection_tags(self.tree_lignes), self.on_article_select(e)])        
         self.actions_article_frame = tk.Frame(self.left_col, bg="#1E1E1E")
         self.actions_article_frame.pack(fill=tk.X, pady=(0, 10))
         
@@ -650,6 +648,7 @@ class SotraglaceApp:
         self.tree_lignes.tag_configure('encours', background='#F57C00', foreground='white')
         self.tree_lignes.tag_configure('pret', background='#1E88E5', foreground='white')
         self.tree_lignes.tag_configure('attente', background='#424242', foreground='#AAAAAA')
+        self.tree_lignes.tag_configure('pas_demarre', background='#424242', foreground='#AAAAAA')
         self.tree_lignes.tag_configure('erreur', background='#D32F2F', foreground='white')
         self.tree_lignes.tag_configure('child', foreground='#888888')
         
@@ -662,6 +661,7 @@ class SotraglaceApp:
         self.tree_lignes.tag_configure('encours_sel', background=sel_blue, foreground='white', font=font_sel)
         self.tree_lignes.tag_configure('pret_sel', background=sel_blue, foreground='white', font=font_sel)
         self.tree_lignes.tag_configure('attente_sel', background=sel_blue, foreground='white', font=font_sel)
+        self.tree_lignes.tag_configure('pas_demarre_sel', background=sel_blue, foreground='white', font=font_sel)
         self.tree_lignes.tag_configure('erreur_sel', background=sel_blue, foreground='white', font=font_sel)
         self.tree_lignes.tag_configure('child_sel', background=sel_blue, foreground='white', font=font_sel)
         self.tree_lignes.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
@@ -772,6 +772,19 @@ class SotraglaceApp:
         self.build_be_matrice_ui()
         self.build_be_charge_ui()
 
+    def on_main_tab_changed(self, event):
+        tab_id = self.notebook.select()
+        tab_text = self.notebook.tab(tab_id, "text")
+        if "BUREAU" in tab_text:
+            if hasattr(self, "be_notebook"):
+                be_tab_id = self.be_notebook.select()
+                if be_tab_id:
+                    be_tab_text = self.be_notebook.tab(be_tab_id, "text")
+                    if "Matrice" in be_tab_text:
+                        self.refresh_be_matrice()
+                    elif "Charge" in be_tab_text:
+                        self.refresh_be_charge()
+
     def on_be_tab_changed(self, event):
         tab_id = self.be_notebook.select()
         tab_text = self.be_notebook.tab(tab_id, "text")
@@ -813,15 +826,18 @@ class SotraglaceApp:
         scroll_be_cmd.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree_be_cmd.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
         
+        self.tree_be_cmd.tag_configure('terminee', background='#2e5e32')
+        self.tree_be_cmd.tag_configure('encours', background='#825018')
+        self.tree_be_cmd.tag_configure('pas_demarre', background='#424242', foreground='#AAAAAA')
+        
         self.tree_be_cmd.tag_configure('terminee_sel', background='#1E7B35', foreground='white', font=("Segoe UI", 10, "bold underline"))
         self.tree_be_cmd.tag_configure('encours_sel', background='#A85C1C', foreground='white', font=("Segoe UI", 10, "bold underline"))
-        self.tree_be_cmd.tag_configure('pas_demarre_sel', background='#222222', foreground='white', font=("Segoe UI", 10, "bold underline"))
+        self.tree_be_cmd.tag_configure('pas_demarre_sel', background='#005A9E', foreground='white', font=("Segoe UI", 10, "bold underline"))
         self.tree_be_cmd.tag_configure('default_sel', background='#005A9E', foreground='white', font=("Segoe UI", 10, "bold underline"))
         self.tree_be_cmd.bind("<<TreeviewSelect>>", lambda e: [self._update_selection_tags(self.tree_be_cmd), self.on_be_order_select(e)])
         
         font_sel = ("Segoe UI", 11, "bold underline")
         sel_blue = '#005A9E'
-        self.tree_be_cmd.tag_configure('default_sel', background=sel_blue, foreground='white', font=font_sel)
         
         # --- Droite : Détails ---
         right_be = tk.Frame(body_be, bg="#2D2D30")
@@ -981,9 +997,40 @@ class SotraglaceApp:
         # Rafraîchir aussi la liste des commandes BE
         for item in self.tree_be_cmd.get_children():
             self.tree_be_cmd.delete(item)
+            
+        be_orders = []
         for do_piece, entete in self.sage_data['entetes'].items():
             client = entete.get("DO_Tiers", "")
-            self.tree_be_cmd.insert("", "end", iid=do_piece, values=(do_piece, client))
+            if filter_text and (filter_text not in do_piece.lower() and filter_text not in client.lower()):
+                continue
+                
+            # Pour le BE, on veut toutes les commandes, même si total == 0
+            scanned, total, pct_str = self.get_order_progress(do_piece)
+            
+            tag = "pas_demarre"
+            if total > 0:
+                if scanned >= total:
+                    tag = "terminee"
+                elif scanned > 0:
+                    tag = "encours"
+            else:
+                tag = "pas_demarre"
+                
+            be_orders.append({
+                "values": (do_piece, client),
+                "tag": tag
+            })
+            
+        # Tri (En cours, puis pas démarré, puis terminé)
+        def sort_be(o):
+            if o['tag'] == 'encours': return 0
+            if o['tag'] == 'pas_demarre': return 1
+            return 2
+            
+        be_orders.sort(key=sort_be)
+        
+        for o in be_orders:
+            self.tree_be_cmd.insert("", "end", iid=o['values'][0], values=o['values'], tags=(o['tag'],))
 
     def on_be_order_select(self, event):
         self._update_selection_tags(self.tree_be_cmd)
@@ -1140,6 +1187,14 @@ class SotraglaceApp:
         self.tree_matrice.tag_configure("pas_demarre", background="#424242", foreground="#AAAAAA")
         self.tree_matrice.tag_configure("encours", background="#F57C00", foreground="white")
         self.tree_matrice.tag_configure("terminee", background="#388E3C", foreground="white")
+        
+        sel_blue = '#005A9E'
+        font_sel = ("Segoe UI", 11, "bold underline")
+        self.tree_matrice.tag_configure("pas_demarre_sel", background=sel_blue, foreground="white", font=font_sel)
+        self.tree_matrice.tag_configure("encours_sel", background=sel_blue, foreground="white", font=font_sel)
+        self.tree_matrice.tag_configure("terminee_sel", background=sel_blue, foreground="white", font=font_sel)
+        
+        self.tree_matrice.bind("<<TreeviewSelect>>", lambda e: self._update_selection_tags(self.tree_matrice))
 
     def refresh_be_matrice(self):
         for item in self.tree_matrice.get_children():
@@ -1385,6 +1440,19 @@ class SotraglaceApp:
                 self.list_encours.insert(tk.END, txt)
 
 
+    def _update_single_cmd_in_tree(self, do_piece):
+        scanned, total, pct_str = self.get_order_progress(do_piece)
+        if self.tree_cmd.exists(do_piece):
+            tag = "pas_demarre"
+            if total > 0:
+                if scanned >= total:
+                    tag = "terminee"
+                elif scanned > 0:
+                    tag = "encours"
+            row_vals = self.tree_cmd.item(do_piece, "values")
+            if len(row_vals) >= 4:
+                self.tree_cmd.item(do_piece, values=(row_vals[0], row_vals[1], row_vals[2], f"{scanned}/{total} ({pct_str})"), tags=(tag,))
+
     def update_lines_view(self, do_piece):
         open_states = {}
         for item in self.tree_lignes.get_children():
@@ -1453,21 +1521,24 @@ class SotraglaceApp:
             situation = ""
             tag = ""
             
-            if mes_scans >= qte:
+            if mes_scans >= qte and qte > 0:
                 statut_txt = "Terminé"
-                situation = "✔ Terminé à ce poste"
+                situation = "✅ Terminé à ce poste"
                 tag = "terminee"
-            elif dispo > 0:
-                statut_txt = f"En cours ({mes_scans}/{qte})"
-                situation = f"► Prêt à produire : {dispo} dispo"
-                tag = "pret"
             elif mes_scans > 0:
                 statut_txt = f"En cours ({mes_scans}/{qte})"
-                situation = f"En attente étape précédente"
                 tag = "encours"
+                if dispo > 0:
+                    situation = f"▶️ Prêt à produire : {dispo} dispo"
+                else:
+                    situation = f"En attente étape précédente"
             else:
-                situation = "Bloqué (Étape précédente non finie)"
-                tag = "attente"
+                statut_txt = "Pas démarré"
+                tag = "pas_demarre"
+                if dispo > 0:
+                    situation = f"▶️ Prêt à produire : {dispo} dispo"
+                else:
+                    situation = "Bloqué (Étape précédente non finie)"
                 
             dim = observ if observ else "--"
             self.tree_lignes.insert("", "end", iid=id_of, values=("OF", prod, design, dim, qte, statut_txt, situation), tags=(tag,), open=False)
@@ -1825,12 +1896,7 @@ class SotraglaceApp:
             self.update_lines_view(do_piece)
             
             # Rafraîchir dynamiquement la commande globale
-            scanned, total, pct_str = self.get_order_progress(do_piece)
-            if self.tree_cmd.exists(do_piece):
-                tag = "encours" if scanned < total else "terminee"
-                row_vals = self.tree_cmd.item(do_piece, 'values')
-                if len(row_vals) >= 4:
-                    self.tree_cmd.item(do_piece, values=(row_vals[0], row_vals[1], row_vals[2], f"{scanned}/{total} ({pct_str})"), tags=(tag,))
+            self._update_single_cmd_in_tree(do_piece)
             
             # Mettre à jour les infos du flash
             self.lbl_commande.config(text=f"Commande : {do_piece}")
@@ -1981,7 +2047,7 @@ class SotraglaceApp:
         
         self.update_lines_view(do_piece)
         if hasattr(self, "_update_single_cmd_in_tree"):
-            self._update_single_cmd_in_tree(do_piece)
+                self._update_single_cmd_in_tree(do_piece)
                 
         if self.tree_lignes.exists(original_selection):
             self.tree_lignes.selection_set(original_selection)
@@ -2062,7 +2128,7 @@ class SotraglaceApp:
         
         self.update_lines_view(do_piece)
         if hasattr(self, "_update_single_cmd_in_tree"):
-            self._update_single_cmd_in_tree(do_piece)
+                self._update_single_cmd_in_tree(do_piece)
                 
         if self.tree_lignes.exists(original_selection):
             self.tree_lignes.selection_set(original_selection)
@@ -2070,4 +2136,15 @@ class SotraglaceApp:
             self.on_article_select(None)
             
         self.update_status_bar("success", f"{min(to_remove, len(scans))} scan(s) annulé(s) manuellement.")
+
+if __name__ == "__main__":
+    import traceback
+    try:
+        root = tk.Tk()
+        app = SotraglaceApp(root)
+        root.mainloop()
+    except Exception as e:
+        with open("crash.log", "w") as f:
+            f.write(traceback.format_exc())
+
 
